@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>The Yardage Book</title>
+  <meta name="theme-color" content="#1E3A2C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" href="icon-192.png">
+  <style>html, body { margin: 0; background: #F5F2E8; }</style>
+
+  <script>
+    /* ============================================================
+       PASTE YOUR SUPABASE DETAILS HERE
+       Supabase dashboard → Project Settings → API
+       - Project URL  →  SUPABASE_URL
+       - anon public  →  SUPABASE_ANON_KEY
+       (The anon key is safe to publish — row level security means
+       each signed-in user can only ever read their own journal.)
+       ============================================================ */
+    window.JOURNAL_CONFIG = {
+      SUPABASE_URL: "YOUR_SUPABASE_URL",
+      SUPABASE_ANON_KEY: "YOUR_SUPABASE_ANON_KEY",
+      AI_ENDPOINT: "" // optional — see README, leave blank to hide the AI button
+    };
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(function () {});
+    }
+  </script>
+</body>
+</html>
