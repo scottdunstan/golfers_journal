@@ -1,20 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { createClient } from "@supabase/supabase-js";
 
 /* ------------------------------------------------------------------ */
-/*  The Yardage Book — standalone edition                              */
-/*  Local-first: every save lands in this device's storage instantly,  */
-/*  then syncs to Supabase in the background when there's signal.      */
+/*  The Yardage Book — open edition                                    */
+/*  No login, no backend. Everything lives in this browser's own      */
+/*  storage. Use "Download backup" to move it between devices.        */
 /* ------------------------------------------------------------------ */
 
 const CFG = (typeof window !== "undefined" && window.JOURNAL_CONFIG) || {};
-const CONFIGURED =
-  CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY &&
-  !String(CFG.SUPABASE_URL).includes("YOUR_") && !String(CFG.SUPABASE_ANON_KEY).includes("YOUR_");
-
-const sb = CONFIGURED ? createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
-
 const LS_DOC = "yb-doc-v1";
 const LS_IMG = "yb-img-"; // + shot id
 
@@ -47,6 +40,18 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 const SEED = {
   entries: [
+    {
+      id: "e-swing-triple",
+      date: "2026-07-25",
+      title: "Three additions to the full swing picture",
+      location: "",
+      tags: ["swing"],
+      body: `Three additions to the full swing picture:
+
+1. Think of the TARGET — not the ball. The place where I want the ball to go, not the thing I'm hitting.
+2. Create an "L" with the least amount of bend in my right elbow, as far away and behind me as possible.
+3. Let the lower body drive the swing: the pelvis turns IN PLACE — it does not move out towards the ball.`,
+    },
     {
       id: "e-nets-axe",
       date: "2026-07-23",
@@ -92,6 +97,9 @@ Logged preliminary carry distances for each wedge on Trackman (see the Distances
     },
   ],
   thoughts: [
+    { id: "t-target", area: "full", status: "active", added: "2026-07-25", text: "Target, not ball — see where it's going, not what you're hitting." },
+    { id: "t-wide-l", area: "full", status: "active", added: "2026-07-25", text: "Wide \"L\": minimal right-elbow bend, as far away and behind as possible." },
+    { id: "t-pelvis", area: "full", status: "active", added: "2026-07-25", text: "Pelvis turns in place — lower body drives, nothing drifts toward the ball." },
     { id: "t-hogan-knee", area: "full", status: "active", added: "2026-07-16", text: "Ben Hogan: run the knee at the ball. (The eagle thought.)" },
     { id: uid(), area: "full", status: "active", added: "2026-07-23", text: "Throw the axe behind you at 6:30–6:45 — that's what brings the club at the ball from the inside." },
     { id: uid(), area: "full", status: "active", added: "2026-07-23", text: "Wide takeaway: stretch the handle away from the lead foot like a rubber band — lead foot keeps the log down, no sway." },
@@ -160,304 +168,85 @@ const NEXT_STATUS = { active: "faded", faded: "retired", retired: "active" };
 const STATUS_ACTION = { active: "Mark faded", faded: "Retire", retired: "Reactivate" };
 const STATUS_LABEL = { active: "Active", faded: "Faded", retired: "Retired (worked before)" };
 
-/* ---------------------- local + remote storage --------------------- */
+/* ------------------------- local storage --------------------------- */
 
 const readLocalDoc = () => {
   try {
     const raw = localStorage.getItem(LS_DOC);
-    return raw ? JSON.parse(raw) : null; // { doc, updatedAt }
+    return raw ? JSON.parse(raw).doc || null : null;
   } catch {
     return null;
   }
 };
-
 const writeLocalDoc = (doc) => {
-  const wrapped = { doc, updatedAt: Date.now() };
-  try { localStorage.setItem(LS_DOC, JSON.stringify(wrapped)); } catch {}
-  return wrapped;
+  try { localStorage.setItem(LS_DOC, JSON.stringify({ doc, updatedAt: Date.now() })); return true; } catch { return false; }
 };
-
 const readLocalImg = (id) => {
   try { return localStorage.getItem(LS_IMG + id); } catch { return null; }
 };
 const writeLocalImg = (id, data) => {
-  try { localStorage.setItem(LS_IMG + id, data); } catch {}
+  try { localStorage.setItem(LS_IMG + id, data); return true; } catch { return false; }
 };
 const removeLocalImg = (id) => {
   try { localStorage.removeItem(LS_IMG + id); } catch {}
 };
 
+const images = {
+  get: async (id) => readLocalImg(id),
+  set: async (id, dataUrl) => writeLocalImg(id, dataUrl),
+  remove: async (id) => removeLocalImg(id),
+};
+
 /* ============================ APP ================================= */
 
 function App() {
-  const [session, setSession] = useState(undefined); // undefined = checking
-
-  useEffect(() => {
-    if (!sb) { setSession(null); return; }
-    sb.auth.getSession().then(({ data }) => setSession(data.session || null));
-    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setSession(s || null));
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  if (!CONFIGURED) return <SetupNotice />;
-  if (session === undefined) {
-    return (
-      <Frame>
-        <p style={{ color: C.pencil, fontStyle: "italic", padding: 24 }}>Opening the yardage book…</p>
-      </Frame>
-    );
-  }
-  if (!session) return <Login />;
-  return <JournalApp session={session} />;
-}
-
-function SetupNotice() {
-  return (
-    <Frame>
-      <div style={{ maxWidth: 560, margin: "40px auto", background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 24 }}>
-        <h2 style={{ marginTop: 0, fontFamily: "'Oswald', 'Arial Narrow', sans-serif", textTransform: "uppercase", letterSpacing: "0.1em", color: C.turf }}>
-          One step left
-        </h2>
-        <p style={{ fontSize: 14.5, lineHeight: 1.6 }}>
-          Open <code>index.html</code> and paste your Supabase project URL and anon key into the
-          <code> window.JOURNAL_CONFIG</code> block at the top. The README covers where to find them —
-          Project Settings → API in your Supabase dashboard.
-        </p>
-      </div>
-    </Frame>
-  );
-}
-
-/* ---------------------------- login ------------------------------- */
-
-function Login() {
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [stage, setStage] = useState("email"); // email | code
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const sendCode = async () => {
-    if (!email.trim() || busy) return;
-    setBusy(true); setErr("");
-    const { error } = await sb.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
-    setBusy(false);
-    if (error) setErr(error.message);
-    else setStage("code");
-  };
-
-  const verify = async () => {
-    if (!code.trim() || busy) return;
-    setBusy(true); setErr("");
-    const { error } = await sb.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: "email" });
-    setBusy(false);
-    if (error) setErr("That code didn't match — check the most recent email and try again.");
-  };
-
-  const input = {
-    width: "100%", border: `1px solid ${C.line}`, borderRadius: 6, padding: "12px 12px",
-    fontSize: 16, background: C.paper, marginBottom: 10,
-  };
-
-  return (
-    <Frame>
-      <div style={{ maxWidth: 400, margin: "48px auto", background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 24 }}>
-        <h2 style={{ marginTop: 0, fontFamily: "'Oswald', 'Arial Narrow', sans-serif", textTransform: "uppercase", letterSpacing: "0.1em", color: C.turf, fontSize: 18 }}>
-          Sign in
-        </h2>
-        {stage === "email" ? (
-          <>
-            <p style={{ fontSize: 13.5, color: C.pencil, lineHeight: 1.5 }}>
-              Enter your email and we'll send a one-time code. Your journal is private to your account and syncs
-              between your phone and computer.
-            </p>
-            <input style={input} type="email" inputMode="email" autoComplete="email" placeholder="you@example.com"
-              value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendCode()} />
-            <button onClick={sendCode} disabled={busy || !email.trim()} style={{ ...primaryBtn, opacity: email.trim() && !busy ? 1 : 0.6 }}>
-              {busy ? "Sending…" : "Send code"}
-            </button>
-          </>
-        ) : (
-          <>
-            <p style={{ fontSize: 13.5, color: C.pencil, lineHeight: 1.5 }}>
-              Check <strong>{email}</strong> for a 6-digit code and enter it below.
-            </p>
-            <input style={input} inputMode="numeric" autoComplete="one-time-code" placeholder="123456"
-              value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && verify()} />
-            <button onClick={verify} disabled={busy || !code.trim()} style={{ ...primaryBtn, opacity: code.trim() && !busy ? 1 : 0.6 }}>
-              {busy ? "Checking…" : "Open the journal"}
-            </button>
-            <button onClick={() => { setStage("email"); setCode(""); }} style={{ ...ghostBtn, marginTop: 10 }}>
-              Use a different email
-            </button>
-          </>
-        )}
-        {err && <p style={{ color: C.red, fontSize: 13, marginTop: 10 }}>{err}</p>}
-      </div>
-    </Frame>
-  );
-}
-
-const primaryBtn = {
-  cursor: "pointer", border: "none", background: C.turf, color: C.paper,
-  padding: "12px 18px", fontSize: 15, fontWeight: 600, borderRadius: 6, width: "100%",
-};
-const ghostBtn = {
-  cursor: "pointer", border: `1px solid ${C.line}`, background: "transparent", color: C.pencil,
-  padding: "8px 12px", fontSize: 13, borderRadius: 6, width: "100%",
-};
-
-/* ------------------------- main journal --------------------------- */
-
-function JournalApp({ session }) {
-  const userId = session.user.id;
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("brief");
-  const [sync, setSync] = useState("checking"); // synced | syncing | offline | checking
-  const dirtyRef = useRef(false);
-  const pushTimer = useRef(null);
-  const dataRef = useRef(null);
-  dataRef.current = data;
+  const [saveState, setSaveState] = useState("saved"); // saved | error
 
-  /* ---- push local doc to Supabase (debounced, retried) ---- */
-  const push = async () => {
-    const doc = dataRef.current;
-    if (!doc) return;
-    setSync("syncing");
-    const { error } = await sb.from("journal_docs").upsert({
-      user_id: userId,
-      doc,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) {
-      setSync("offline");
+  useEffect(() => {
+    const local = readLocalDoc();
+    if (local) {
+      setData(local);
     } else {
-      dirtyRef.current = false;
-      setSync("synced");
+      setData(SEED);
+      const ok = writeLocalDoc(SEED);
+      for (const [id, img] of Object.entries(SEED_IMAGES)) writeLocalImg(id, img);
+      if (!ok) setSaveState("error");
     }
-  };
-
-  const queuePush = () => {
-    dirtyRef.current = true;
-    clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(push, 900);
-  };
-
-  useEffect(() => {
-    const retry = () => { if (dirtyRef.current) push(); };
-    window.addEventListener("online", retry);
-    const iv = setInterval(retry, 30000);
-    return () => { window.removeEventListener("online", retry); clearInterval(iv); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /* ---- initial load: local first, reconcile with remote ---- */
-  useEffect(() => {
-    (async () => {
-      const local = readLocalDoc();
-      if (local) { setData(local.doc); setLoading(false); }
-
-      let remote = null;
-      try {
-        const { data: row, error } = await sb.from("journal_docs").select("doc, updated_at").maybeSingle();
-        if (!error) remote = row;
-        setSync(error ? "offline" : "synced");
-      } catch {
-        setSync("offline");
-      }
-
-      if (remote && (!local || new Date(remote.updated_at).getTime() >= local.updatedAt)) {
-        setData(remote.doc);
-        writeLocalDoc(remote.doc);
-      } else if (local && remote && local.updatedAt > new Date(remote.updated_at).getTime()) {
-        queuePush(); // this device is ahead
-      } else if (!local && !remote) {
-        // brand new account: seed it, including the two scrapbook screenshots
-        setData(SEED);
-        writeLocalDoc(SEED);
-        for (const [id, img] of Object.entries(SEED_IMAGES)) {
-          writeLocalImg(id, img);
-          try { await sb.from("shot_images").upsert({ user_id: userId, id, data: img }); } catch {}
-        }
-        queuePush();
-      } else if (local && !remote) {
-        queuePush();
-      }
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
 
   const save = (next) => {
     setData(next);
-    writeLocalDoc(next);
-    queuePush();
+    setSaveState(writeLocalDoc(next) ? "saved" : "error");
   };
 
-  /* ---- image adapter passed down to the scrapbook ---- */
-  const images = {
-    get: async (id) => {
-      const cached = readLocalImg(id);
-      if (cached) return cached;
-      try {
-        const { data: row } = await sb.from("shot_images").select("data").eq("id", id).maybeSingle();
-        if (row && row.data) { writeLocalImg(id, row.data); return row.data; }
-      } catch {}
-      return null;
-    },
-    set: async (id, dataUrl) => {
-      writeLocalImg(id, dataUrl);
-      try {
-        const { error } = await sb.from("shot_images").upsert({ user_id: userId, id, data: dataUrl });
-        return !error;
-      } catch {
-        return false; // stays local; will exist on this device regardless
-      }
-    },
-    remove: async (id) => {
-      removeLocalImg(id);
-      try { await sb.from("shot_images").delete().eq("id", id); } catch {}
-    },
-  };
-
-  if (loading || !data) {
+  if (!data) {
     return (
-      <Frame>
+      <Shell tab={tab} setTab={setTab} saveState="saved">
         <p style={{ color: C.pencil, fontStyle: "italic", padding: 24 }}>Opening the yardage book…</p>
-      </Frame>
+      </Shell>
     );
   }
 
   return (
-    <Shell tab={tab} setTab={setTab} sync={sync} onSignOut={() => sb.auth.signOut()}>
+    <Shell tab={tab} setTab={setTab} saveState={saveState}>
+      {saveState === "error" && (
+        <div style={{ background: "#F3E0DC", border: `1px solid ${C.red}`, color: C.red, padding: "8px 12px", fontSize: 13, marginBottom: 14, borderRadius: 6 }}>
+          This browser is blocking storage (private window, or storage full) — changes won't survive closing the tab. Open the site in a normal window, or download a backup before you leave.
+        </div>
+      )}
       {tab === "brief" && <Brief data={data} save={save} />}
       {tab === "journal" && <Journal data={data} save={save} />}
       {tab === "thoughts" && <Thoughts data={data} save={save} />}
-      {tab === "shots" && <GreatShots data={data} save={save} images={images} />}
+      {tab === "shots" && <GreatShots data={data} save={save} />}
       {tab === "distances" && <Distances data={data} save={save} />}
-      <ExportImport data={data} save={save} images={images} />
+      <ExportImport data={data} save={save} />
     </Shell>
   );
 }
 
 /* ---------------------------- shell ------------------------------- */
-
-function Frame({ children }) {
-  return (
-    <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'Public Sans', 'Segoe UI', system-ui, sans-serif" }}>
-      <GlobalStyle />
-      <header style={{ background: C.turf, color: C.paper, padding: "18px 20px" }}>
-        <div style={{ maxWidth: 860, margin: "0 auto" }}>
-          <h1 style={{ fontFamily: "'Oswald', 'Arial Narrow', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "clamp(20px, 4vw, 28px)", margin: 0 }}>
-            The Yardage Book
-          </h1>
-        </div>
-      </header>
-      <main style={{ maxWidth: 860, margin: "0 auto", padding: "10px 16px 60px" }}>{children}</main>
-    </div>
-  );
-}
 
 function GlobalStyle() {
   return (
@@ -473,14 +262,7 @@ function GlobalStyle() {
   );
 }
 
-const SYNC_LABEL = {
-  synced: "✓ synced",
-  syncing: "syncing…",
-  offline: "offline — saved on this device",
-  checking: "…",
-};
-
-function Shell({ tab, setTab, sync, onSignOut, children }) {
+function Shell({ tab, setTab, saveState, children }) {
   const tabs = [
     ["brief", "Today's card"],
     ["journal", "Journal"],
@@ -497,11 +279,8 @@ function Shell({ tab, setTab, sync, onSignOut, children }) {
             <h1 style={{ fontFamily: "'Oswald', 'Arial Narrow', sans-serif", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "clamp(20px, 4vw, 28px)", margin: 0 }}>
               The Yardage Book
             </h1>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, opacity: 0.85, display: "flex", gap: 12, alignItems: "baseline" }}>
-              {SYNC_LABEL[sync]}
-              <button onClick={onSignOut} style={{ background: "none", border: "none", color: C.paper, opacity: 0.7, cursor: "pointer", fontSize: 11, textDecoration: "underline", padding: 0 }}>
-                sign out
-              </button>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, opacity: 0.85 }}>
+              {saveState === "error" ? "⚠ not saving" : "saved on this device"}
             </span>
           </div>
           <nav style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
@@ -749,6 +528,8 @@ function Journal({ data, save }) {
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .filter((e) => filter === "all" || (e.tags || []).includes(filter));
 
+  const ready = body.trim().length > 0;
+
   return (
     <div>
       <div style={{ ...cardStyle, marginBottom: 24 }}>
@@ -791,13 +572,13 @@ function Journal({ data, save }) {
         )}
         {aiErr && <p style={{ color: C.red, fontSize: 13, marginTop: 8 }}>{aiErr}</p>}
 
-        <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-          <button onClick={addEntry} disabled={!body.trim()} style={{ ...btn(true), opacity: body.trim() ? 1 : 0.5 }}>
-            Save entry{Object.values(picked).filter(Boolean).length ? " + thoughts" : ""}
+        <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <button onClick={addEntry} disabled={!ready} style={{ ...btn(true), opacity: ready ? 1 : 0.5 }}>
+            {ready ? `Save entry${Object.values(picked).filter(Boolean).length ? " + thoughts" : ""}` : "Write something first"}
           </button>
           {CFG.AI_ENDPOINT ? (
-            <button onClick={organise} disabled={!body.trim() || aiBusy}
-              style={{ ...btn(false), padding: "10px 14px", fontSize: 13, opacity: body.trim() ? 1 : 0.5, borderColor: C.turf, color: C.turf }}>
+            <button onClick={organise} disabled={!ready || aiBusy}
+              style={{ ...btn(false), padding: "10px 14px", fontSize: 13, opacity: ready ? 1 : 0.5, borderColor: C.turf, color: C.turf }}>
               {aiBusy ? "Reading your notes…" : "Organise with AI"}
             </button>
           ) : null}
@@ -888,7 +669,9 @@ function Thoughts({ data, save }) {
             style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "10px 10px", fontSize: 15, background: C.paper }}>
             {Object.entries(AREAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <button onClick={add} disabled={!text.trim()} style={{ ...btn(true), opacity: text.trim() ? 1 : 0.5 }}>Add</button>
+          <button onClick={add} disabled={!text.trim()} style={{ ...btn(true), opacity: text.trim() ? 1 : 0.5 }}>
+            {text.trim() ? "Add" : "Type a cue first"}
+          </button>
         </div>
         <p style={{ fontSize: 12.5, color: C.pencil, marginTop: 10, marginBottom: 0 }}>
           Thoughts have a shelf life. When one stops working, mark it <em>faded</em>. When it's done its job, <em>retire</em> it —
@@ -954,7 +737,7 @@ const compressImage = (file) =>
     reader.readAsDataURL(file);
   });
 
-function GreatShots({ data, save, images }) {
+function GreatShots({ data, save }) {
   const shots = data.shots || [];
   const [imgs, setImgs] = useState({});
   const [form, setForm] = useState({ title: "", date: todayISO(), course: "", club: "", clubTag: "", distance: "", story: "" });
@@ -1000,8 +783,9 @@ function GreatShots({ data, save, images }) {
       hasImage: !!pendingImg,
     };
     if (pendingImg) {
-      await images.set(shot.id, pendingImg);
-      setImgs((m) => ({ ...m, [shot.id]: pendingImg }));
+      const ok = await images.set(shot.id, pendingImg);
+      if (ok) setImgs((m) => ({ ...m, [shot.id]: pendingImg }));
+      else { shot.hasImage = false; setImgErr("Storage is full, so the picture couldn't be kept — the story was saved. Delete an old image or trim the journal to make room."); }
     }
     save({ ...data, shots: [shot, ...shots] });
     setForm({ title: "", date: todayISO(), course: "", club: "", clubTag: "", distance: "", story: "" });
@@ -1022,6 +806,7 @@ function GreatShots({ data, save, images }) {
   const shown = [...shots]
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .filter((s) => clubFilter === "all" || s.clubTag === clubFilter);
+  const ready = form.title.trim() || form.story.trim();
 
   return (
     <div>
@@ -1051,9 +836,8 @@ function GreatShots({ data, save, images }) {
             <input type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
           </label>
           {pendingImg && <img src={pendingImg} alt="Preview" style={{ height: 54, borderRadius: 4, border: `1px solid ${C.line}` }} />}
-          <button onClick={addShot} disabled={!form.title.trim() && !form.story.trim()}
-            style={{ ...btn(true), opacity: form.title.trim() || form.story.trim() ? 1 : 0.5 }}>
-            Save to the reservoir
+          <button onClick={addShot} disabled={!ready} style={{ ...btn(true), opacity: ready ? 1 : 0.5 }}>
+            {ready ? "Save to the reservoir" : "Add a title or story first"}
           </button>
         </div>
         {imgErr && <p style={{ color: C.red, fontSize: 13, marginTop: 8 }}>{imgErr}</p>}
@@ -1215,7 +999,7 @@ function Distances({ data, save }) {
 
 /* ------------------------ export / import ------------------------- */
 
-function ExportImport({ data, save, images }) {
+function ExportImport({ data, save }) {
   const [msg, setMsg] = useState("");
 
   const doExport = async () => {
@@ -1258,7 +1042,9 @@ function ExportImport({ data, save, images }) {
         Restore from backup
         <input type="file" accept="application/json" onChange={doImport} style={{ display: "none" }} />
       </label>
-      {msg && <span style={{ fontSize: 12, color: C.pencil }}>{msg}</span>}
+      <span style={{ fontSize: 12, color: C.pencil }}>
+        {msg || "Everything is stored in this browser only — back up now and then, and use restore to move devices."}
+      </span>
     </div>
   );
 }

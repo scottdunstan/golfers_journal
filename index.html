@@ -13,18 +13,10 @@
   <style>html, body { margin: 0; background: #F5F2E8; }</style>
 
   <script>
-    /* ============================================================
-       PASTE YOUR SUPABASE DETAILS HERE
-       Supabase dashboard → Project Settings → API
-       - Project URL  →  SUPABASE_URL
-       - anon public  →  SUPABASE_ANON_KEY
-       (The anon key is safe to publish — row level security means
-       each signed-in user can only ever read their own journal.)
-       ============================================================ */
+    /* No setup needed — the journal saves to this browser's own storage.
+       AI_ENDPOINT is optional (see README); leave blank to hide the AI button. */
     window.JOURNAL_CONFIG = {
-      SUPABASE_URL: "https://hfuepekhcxwalxlupoil.supabase.co",
-      SUPABASE_ANON_KEY: "sb_publishable_kYiWDIqV47ya0UxHzXeZFQ_X3Xh1zIs",
-      AI_ENDPOINT: "" // optional — see README, leave blank to hide the AI button
+      AI_ENDPOINT: ""
     };
   </script>
 </head>
